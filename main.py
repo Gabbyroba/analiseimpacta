@@ -6,7 +6,16 @@ import sqlite3
 def obter_deputados():
     url = 'https://dadosabertos.camara.leg.br/api/v2/deputados?ordem=ASC&ordenarPor=nome'
     resposta = requests.get(url)
-    return resposta.json().get('dados', [])
+    
+    if resposta.status_code != 200:
+        print(f"Erro ao acessar API: {resposta.status_code}")
+        return []
+    
+    try:
+        return resposta.json().get('dados', [])
+    except requests.exceptions.JSONDecodeError:
+        print("Erro ao decodificar JSON da resposta da API.")
+        return []
 
 # Função para obter despesas de um deputado específico
 def obter_despesas(id_deputado, ano=2024):
@@ -14,10 +23,20 @@ def obter_despesas(id_deputado, ano=2024):
     pagina = 1
     while True:
         url = f'https://dadosabertos.camara.leg.br/api/v2/deputados/{id_deputado}/despesas?ano={ano}&itens=100&pagina={pagina}'
-        resposta = requests.get(url).json()
-        despesas.extend(resposta.get('dados', []))
+        resposta = requests.get(url)
         
-        if not any(link['rel'] == 'next' for link in resposta.get('links', [])):
+        if resposta.status_code != 200:
+            print(f"Erro ao acessar despesas do deputado {id_deputado}: {resposta.status_code}")
+            break
+        
+        try:
+            dados = resposta.json()
+            despesas.extend(dados.get('dados', []))
+        except requests.exceptions.JSONDecodeError:
+            print(f"Erro ao decodificar JSON das despesas do deputado {id_deputado}.")
+            break
+        
+        if not any(link['rel'] == 'next' for link in dados.get('links', [])):
             break
         pagina += 1
     
@@ -38,22 +57,26 @@ for deputado in (deputados):
     despesas_totais.extend(despesas)
     
     # Armazena os dados do deputado
-    dados_deputados.extend([
-        [
-            deputado['nome'], deputado['siglaPartido'], deputado['siglaUf'],
-            deputado['idLegislatura'], deputado['urlFoto'], deputado.get('email', '')
-        ] for _ in despesas
-    ])
+    if despesas:
+        dados_deputados.extend([
+            [
+                deputado['nome'], deputado['siglaPartido'], deputado['siglaUf'],
+                deputado['idLegislatura'], deputado['urlFoto'], deputado.get('email', '')
+            ] for _ in despesas
+        ])
 
 # Cria DataFrames
 df_despesas = pd.DataFrame(despesas_totais)
 df_dados_deputados = pd.DataFrame(dados_deputados, columns=['nome', 'siglaPartido', 'siglaUF', 'idLegislatura', 'foto', 'email'])
 
-df_final = df_dados_deputados.join(df_despesas)
-print('Merge feito com sucesso!')
+if not df_despesas.empty and not df_dados_deputados.empty:
+    df_final = df_dados_deputados.join(df_despesas)
+    print("Merge criado com sucesso!")
 
-# Salva os dados em um banco de dados SQLite
-con = sqlite3.connect('despesas_deputados.db')
-df_final.to_sql('despesas', con, if_exists='replace', index=False)
-print('conexão bem sucedida!')
-con.close()
+    # Salva os dados em um banco de dados SQLite
+    con = sqlite3.connect('despesas_deputados.db')
+    df_final.to_sql('despesas', con, if_exists='replace', index=False)
+    print("Conexão bem sucedida, tabela criada!")
+    con.close()
+else:
+    print("Nenhum dado válido foi coletado.")

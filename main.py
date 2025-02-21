@@ -1,90 +1,58 @@
 from tqdm import tqdm
 import requests
-import json 
-import pandas as pd 
+import pandas as pd
+import sqlite3
 
-# PRIMEIRA REQUISIÇÃO - DADOS DOS DEPUTADOS 
-url = 'https://dadosabertos.camara.leg.br/api/v2/deputados?ordem=ASC&ordenarPor=nome'
-r = requests.get(url, allow_redirects=True)
-data = r.json()
-deputados = data['dados']
-dfr = pd.DataFrame(deputados)
+# Função para obter dados dos deputados
+def obter_deputados():
+    url = 'https://dadosabertos.camara.leg.br/api/v2/deputados?ordem=ASC&ordenarPor=nome'
+    resposta = requests.get(url)
+    return resposta.json().get('dados', [])
 
-# CRIA LISTAS VAZIAS PARA ARMAZENAR OS DADOS
+# Função para obter despesas de um deputado específico
+def obter_despesas(id_deputado, ano=2024):
+    despesas = []
+    pagina = 1
+    while True:
+        url = f'https://dadosabertos.camara.leg.br/api/v2/deputados/{id_deputado}/despesas?ano={ano}&itens=100&pagina={pagina}'
+        resposta = requests.get(url).json()
+        despesas.extend(resposta.get('dados', []))
+        
+        if not any(link['rel'] == 'next' for link in resposta.get('links', [])):
+            break
+        pagina += 1
+    
+    return despesas
+
+# Obtém a lista de deputados
+deputados = obter_deputados()
+df_deputados = pd.DataFrame(deputados)
+
+# Lista para armazenar as despesas
 despesas_totais = []
-listas2 = []
-listas3 = []
-listas4 = []
-listas5 = []
-listas6 = []
-listas7 = []
+dados_deputados = []
 
-# DESPESAS INDIVIDUAIS DE DEPUTADOS POR ID
-for id_deputado in tqdm(deputados, desc='Progresso'):
-    id_deputado = id_deputado['id']
-    page = 1
-    has_next_page = True
+# Obtém despesas para cada deputado
+for deputado in tqdm(deputados, desc='Coletando despesas'):
+    id_deputado = deputado['id']
+    despesas = obter_despesas(id_deputado)
+    despesas_totais.extend(despesas)
+    
+    # Armazena os dados do deputado
+    dados_deputados.extend([
+        [
+            deputado['nome'], deputado['siglaPartido'], deputado['siglaUf'],
+            deputado['idLegislatura'], deputado['urlFoto'], deputado.get('email', '')
+        ] for _ in despesas
+    ])
 
-    # SEGUNDA REQUISIÇÃO - PAGINAÇÃO E BUSCA DE DESPESAS TOTAIS POR ID  
-    while has_next_page:
-        des = f'https://dadosabertos.camara.leg.br/api/v2/deputados/{id_deputado}/despesas?ano=2023&itens=100&pagina={page}'
-        req = requests.get(des, allow_redirects=True)
-        dado = req.json()
-        despesas = dado['dados']
-        despesas_totais.extend(despesas)
-        
-        # ARMAZENA DADOS NAS LISTAS
-        for c in range (1, len(despesas)):    
-            nome = dfr.loc[dfr['id'] == id_deputado, 'nome']
-            sigla_partido = dfr.loc[dfr['id'] == id_deputado, 'siglaPartido']
-            sigla_Uf = dfr.loc[dfr['id'] == id_deputado, 'siglaUf']
-            id_Legislatura = dfr.loc[dfr['id'] == id_deputado, 'idLegislatura']
-            url_Foto = dfr.loc[dfr['id'] == id_deputado, 'urlFoto']
-            email = dfr.loc[dfr['id'] == id_deputado, 'email']
+# Cria DataFrames
+df_despesas = pd.DataFrame(despesas_totais)
+df_dados_deputados = pd.DataFrame(dados_deputados, columns=['nome', 'siglaPartido', 'siglaUF', 'idLegislatura', 'foto', 'email'])
 
-            listas2.append(nome.tolist())
-            listas3.append(sigla_partido.tolist())
-            listas4.append(sigla_Uf.tolist())
-            listas5.append(id_Legislatura.tolist())
-            listas6.append(url_Foto.tolist())
-            listas7.append(email.tolist())
-        
-        # PERCORRE AS PÁGINAS E ADICIONA + 1, CASO TENHA LINK DE "NEXT PAGE"
-        if 'next' in dado['links']:
-            page += 1
-        else:
-            has_next_page = False
+df_final = df_dados_deputados.join(df_despesas)
 
-# JUNTA AS LISTAS  
-zipado = list(zip(listas2, listas3, listas4, listas5, listas6, listas7))
-
-# CRIA OS DATAFRAMES
-dfdep = pd.DataFrame(zipado)
-dfdesp = pd.DataFrame(despesas_totais)
-
-# RENOMEIA COLUNAS DO DATAFRAME DFDEP
-dfdep.rename(columns={0: 'nome', 1: 'siglaPartido', 2: 'siglaUF', 
-                      3: 'idLegislatura', 4: 'foto', 5: 'email'}, inplace=True)
-
-# RELACIONA OS DATAFRAMES E EXPORTA COMO XLSX (EXCEL)
-dffinal = dfdep.join(dfdesp)
-dffinal.to_excel('despesasdep.xlsx')
-
-# LÊ A TABELA PARA TRATAR DADOS
-despesasxcel = pd.read_excel('despesasdep.xlsx')
-tabela = despesasxcel
-
-# ELIMINA CARACTERES INDESEJADOS
-tabela['nome'] = tabela['nome'].str.strip("[]'")
-tabela['siglaPartido'] = tabela['siglaPartido'].str.strip("[]'")
-tabela['siglaUF'] = tabela['siglaUF'].str.strip("[]'")
-tabela['idLegislatura'] = tabela['idLegislatura'].str.strip("[]'")
-tabela['foto'] = tabela['foto'].str.strip("[]'")
-tabela['email'] = tabela['email'].str.strip("[]'")
-
-# ELIMINA VALORES NULOS E COLUNAS DESNECESSÁRIAS
-tabela = tabela.dropna()
-tabelaf = tabela.drop(columns='Unnamed: 0')
-
-# SALVA O ARQUIVO FINAL EM XLSX (EXCEL) IGNORANDO O INDEX:
-tabelaf.to_excel('despesasdepfinal.xlsx', index=False)
+# Salva os dados em um banco de dados SQLite
+con = sqlite3.connect('despesas_deputados.db')
+df_final.to_sql('despesas', con, if_exists='replace', index=False)
+con.close()

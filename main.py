@@ -1,4 +1,3 @@
-from tqdm import tqdm
 import requests
 import pandas as pd
 import sqlite3
@@ -33,7 +32,7 @@ despesas_totais = []
 dados_deputados = []
 
 # Obtém despesas para cada deputado
-for deputado in tqdm(deputados, desc='Coletando despesas'):
+for deputado in (deputados):
     id_deputado = deputado['id']
     despesas = obter_despesas(id_deputado)
     despesas_totais.extend(despesas)
@@ -51,8 +50,10 @@ df_despesas = pd.DataFrame(despesas_totais)
 df_dados_deputados = pd.DataFrame(dados_deputados, columns=['nome', 'siglaPartido', 'siglaUF', 'idLegislatura', 'foto', 'email'])
 
 df_final = df_dados_deputados.join(df_despesas)
+print('Merge feito com sucesso!')
 
 # Salva os dados em um banco de dados SQLite
 con = sqlite3.connect('despesas_deputados.db')
 df_final.to_sql('despesas', con, if_exists='replace', index=False)
+print('conexão bem sucedida!')
 con.close()

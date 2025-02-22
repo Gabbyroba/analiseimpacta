@@ -1,6 +1,7 @@
 import requests
 import pandas as pd
 import sqlite3
+from tqdm import tqdm
 
 # Função para obter dados dos deputados
 def obter_deputados():
@@ -50,19 +51,17 @@ df_deputados = pd.DataFrame(deputados)
 despesas_totais = []
 dados_deputados = []
 
-# Obtém despesas para cada deputado
-for deputado in (deputados):
+# Obtém despesas para cada deputado com barra de progresso
+for deputado in tqdm(deputados, desc="Processando deputados"):
     id_deputado = deputado['id']
     despesas = obter_despesas(id_deputado)
     despesas_totais.extend(despesas)
     
-    # Armazena os dados do deputado
     if despesas:
         dados_deputados.extend([
-            [
-                deputado['nome'], deputado['siglaPartido'], deputado['siglaUf'],
-                deputado['idLegislatura'], deputado['urlFoto'], deputado.get('email', '')
-            ] for _ in despesas
+            [deputado['nome'], deputado['siglaPartido'], deputado['siglaUf'],
+             deputado['idLegislatura'], deputado['urlFoto'], deputado.get('email', '')] 
+            for _ in despesas
         ])
 
 # Cria DataFrames

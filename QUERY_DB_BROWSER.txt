@@ -1,0 +1,96 @@
+
+--  Utilizamos a query abaixo para identificar a existência de valores negativos na base, somando sua quantidade e valores
+
+SELECT 
+count(DISTINCT nome),
+sum(valorDocumento),
+sum(valorLiquido)
+FROM 
+despesas 
+WHERE
+SIGN(valorDocumento) = -1 OR SIGN(valorLiquido) = -1
+
+
+-- Na query abaixo eu faço a soma dos valores negativos dos campos 'valorDocumento' e 'valorLiquido' por deputado
+-- Destaco que em todos os casos de valores negativos a soma de 'valorLiquido' é sempre maior que a soma de 'valorDocumento' por deputado
+
+SELECT 
+nome,
+sum(valorDocumento),
+sum(valorLiquido),
+sum(valorLiquido)>sum(valorDocumento) validacao
+FROM 
+despesas 
+WHERE
+SIGN(valorDocumento) = -1 OR SIGN(valorLiquido) = -1
+GROUP BY nome
+ORDER BY sum(valorLiquido)>sum(valorDocumento) DESC
+
+
+-- Na query abaixo eu faço a soma dos valores negativos do campo 'valorLiquido' por deputado
+
+SELECT 
+nome,
+sum(valorLiquido)
+FROM 
+despesas 
+WHERE
+SIGN(valorDocumento) = -1 OR SIGN(valorLiquido) = -1
+GROUP BY nome
+ORDER BY sum(valorLiquido) ASC
+
+
+-- Na query abaixo eu faço a soma dos valores negativos do campo 'valorLiquido' geral da base
+
+SELECT 
+'Total Negativo',
+COUNT(DISTINCT nome),
+sum(valorLiquido)
+FROM 
+despesas 
+WHERE
+SIGN(valorDocumento) = -1 OR SIGN(valorLiquido) = -1
+
+UNION ALL
+
+SELECT 
+'Total Positivo',
+COUNT(DISTINCT nome),
+sum(valorLiquido)
+FROM 
+despesas 
+WHERE
+SIGN(valorDocumento) = 1 OR SIGN(valorLiquido) = 0
+
+
+-- Na query abaixo eu faço a soma dos valores negativos e a soma dos valores positivos do campo 'valorLiquido' por deputado
+
+WITH negativo as (
+SELECT 
+nome,
+sum(valorLiquido) soma_valor_negativo
+FROM 
+despesas 
+WHERE
+SIGN(valorDocumento) = -1 OR SIGN(valorLiquido) = -1
+GROUP BY nome
+),
+
+positivo as (
+SELECT 
+nome,
+sum(valorLiquido) as soma_valor_positivo
+FROM 
+despesas 
+WHERE
+SIGN(valorDocumento) = 1 OR SIGN(valorLiquido) = 0
+GROUP BY nome)
+
+SELECT 
+positivo.nome,
+positivo.soma_valor_positivo,
+negativo.soma_valor_negativo,
+ROUND(ABS(negativo.soma_valor_negativo)/positivo.soma_valor_positivo*100,2) as '%_Negativo'
+FROM positivo 
+LEFT JOIN negativo on positivo.nome = negativo.nome 
+ORDER BY ROUND(ABS(negativo.soma_valor_negativo)/positivo.soma_valor_positivo*100,2) DESC
